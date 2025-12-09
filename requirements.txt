@@ -1,0 +1,24 @@
+# PDF Processing
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+pdf2image==1.16.3
+
+# OCR (optional, for scanned documents)
+pytesseract==0.3.10
+Pillow==10.1.0
+
+# Data processing
+pandas==2.1.4
+openpyxl==3.1.2
+
+# CLI and utilities
+click==8.1.7
+python-dotenv==1.0.0
+colorama==0.4.6
+
+# Reporting
+jinja2==3.1.2
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
