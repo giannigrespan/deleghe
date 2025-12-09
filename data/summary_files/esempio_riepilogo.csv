@@ -1,0 +1,6 @@
+numero_delega;codice_filiale;data_delega;delegante;delegato;importo;tipo_operazione;note
+12345;AG001;2024-01-15;Mario Rossi;Luigi Verdi;1500.00;Prelievo;Delega annuale
+12346;AG002;2024-01-16;Anna Bianchi;Paolo Neri;2300.50;Bonifico;Urgente
+12347;AG001;2024-01-17;Giuseppe Gialli;Maria Rosa;800.00;Prelievo;Standard
+12348;AG003;2024-01-18;Laura Blu;Franco Viola;5000.00;Bonifico;Importo elevato - verificare
+12349;AG002;2024-01-19;Marco Arancio;Silvia Azzurra;1200.00;Prelievo;OK

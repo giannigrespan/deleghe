@@ -37,10 +37,12 @@ data/summary_files/*.xlsx
 data/output/*.json
 data/output/*.html
 data/output/*.csv
+data/output/*.txt
 
 # Keep example files
 !data/pdf_scans/.gitkeep
 !data/summary_files/.gitkeep
+!data/summary_files/esempio_riepilogo.csv
 !data/output/.gitkeep
 
 # Logs
