@@ -1,11 +1,12 @@
 """
 Modulo per la lettura del file di riepilogo delle deleghe
-Supporta formati CSV e Excel
+Supporta formati CSV, Excel e PDF
 """
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+import pdfplumber
 
 
 class SummaryReader:
@@ -16,7 +17,7 @@ class SummaryReader:
         Inizializza il lettore del file di riepilogo
 
         Args:
-            summary_file: Percorso del file di riepilogo (CSV o Excel)
+            summary_file: Percorso del file di riepilogo (CSV, Excel o PDF)
         """
         self.summary_file = Path(summary_file)
         if not self.summary_file.exists():
@@ -24,6 +25,39 @@ class SummaryReader:
 
         self.df = None
         self.column_mapping = {}
+
+    def _extract_table_from_pdf(self) -> pd.DataFrame:
+        """
+        Estrae una tabella da un file PDF
+
+        Returns:
+            DataFrame pandas con i dati estratti dal PDF
+        """
+        all_tables = []
+
+        with pdfplumber.open(self.summary_file) as pdf:
+            for page in pdf.pages:
+                # Estrai tabelle dalla pagina
+                tables = page.extract_tables()
+
+                for table in tables:
+                    if table and len(table) > 0:
+                        # La prima riga è l'header
+                        headers = table[0]
+                        data = table[1:]
+
+                        # Crea DataFrame
+                        if data:
+                            df = pd.DataFrame(data, columns=headers)
+                            all_tables.append(df)
+
+        if not all_tables:
+            raise ValueError("Nessuna tabella trovata nel PDF. Il PDF potrebbe essere scannerizzato o non contenere tabelle.")
+
+        # Combina tutte le tabelle trovate
+        combined_df = pd.concat(all_tables, ignore_index=True)
+
+        return combined_df
 
     def detect_columns(self, df: pd.DataFrame) -> Dict[str, str]:
         """
@@ -108,6 +142,10 @@ class SummaryReader:
 
             elif file_extension in ['.xlsx', '.xls']:
                 df = pd.read_excel(self.summary_file)
+
+            elif file_extension == '.pdf':
+                # Estrai tabelle dal PDF
+                df = self._extract_table_from_pdf()
 
             else:
                 raise ValueError(f"Formato file non supportato: {file_extension}")

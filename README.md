@@ -21,7 +21,7 @@ chmod +x install_linux_mac.sh
 ## Caratteristiche
 
 - ✅ **Estrazione automatica** di informazioni dai PDF scansionati (con OCR)
-- ✅ **Supporto multipli formati** per il file di riepilogo (CSV, Excel)
+- ✅ **Supporto multipli formati** per il file di riepilogo (CSV, Excel, PDF)
 - ✅ **Riconciliazione intelligente** con rilevamento automatico delle discrepanze
 - ✅ **Report dettagliati** in formato JSON, HTML, TXT e CSV
 - ✅ **Interfaccia CLI** user-friendly con colori e progress
@@ -170,6 +170,18 @@ numero_delega;codice_filiale;data_delega;delegante;delegato;importo
 |---------------|----------------|-------------|--------------|-------------|---------|
 | 12345         | AG001          | 15/01/2024  | Mario Rossi  | Luigi Verdi | 1500.00 |
 | 12346         | AG002          | 16/01/2024  | Anna Bianchi | Paolo Neri  | 2300.50 |
+
+**PDF (.pdf):**
+
+Il sistema estrae automaticamente le tabelle dai file PDF. Assicurati che:
+- Il PDF contenga tabelle con struttura chiara (righe e colonne)
+- La prima riga della tabella contenga gli header delle colonne
+- Il PDF non sia scannerizzato (o abbia testo estraibile)
+
+Se il PDF è scannerizzato e non contiene testo estraibile, converti prima in Excel/CSV usando strumenti online come:
+- Adobe Acrobat
+- https://www.ilovepdf.com/pdf_to_excel
+- https://smallpdf.com/pdf-to-excel
 
 ## Convenzioni di Naming per i PDF
 
