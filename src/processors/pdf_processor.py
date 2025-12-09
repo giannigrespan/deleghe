@@ -8,6 +8,12 @@ from typing import Dict, List, Optional
 import pdfplumber
 import PyPDF2
 from datetime import datetime
+try:
+    import pytesseract
+    from pdf2image import convert_from_path
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
 
 class DelegaPDF:
@@ -48,16 +54,24 @@ class DelegaPDF:
 class PDFProcessor:
     """Processa i PDF delle deleghe ed estrae le informazioni rilevanti"""
 
-    def __init__(self, pdf_directory: str):
+    def __init__(self, pdf_directory: str, use_ocr: bool = True, ocr_lang: str = 'ita+eng'):
         """
         Inizializza il processore PDF
 
         Args:
             pdf_directory: Directory contenente i PDF da processare
+            use_ocr: Se True, usa OCR per PDF scansionati (default: True)
+            ocr_lang: Lingue per OCR (default: 'ita+eng')
         """
         self.pdf_directory = Path(pdf_directory)
         if not self.pdf_directory.exists():
             raise ValueError(f"Directory non trovata: {pdf_directory}")
+
+        self.use_ocr = use_ocr and OCR_AVAILABLE
+        self.ocr_lang = ocr_lang
+
+        if use_ocr and not OCR_AVAILABLE:
+            print("⚠️  OCR richiesto ma pytesseract/pdf2image non disponibili")
 
     def get_pdf_files(self) -> List[Path]:
         """Ottiene la lista dei file PDF nella directory"""
@@ -65,9 +79,40 @@ class PDFProcessor:
         pdf_files.extend(self.pdf_directory.glob("*.PDF"))
         return sorted(pdf_files)
 
+    def extract_text_with_ocr(self, pdf_path: Path, max_pages: int = 5) -> str:
+        """
+        Estrae il testo da un PDF scansionato usando OCR
+
+        Args:
+            pdf_path: Percorso del file PDF
+            max_pages: Numero massimo di pagine da processare (default: 5)
+
+        Returns:
+            Testo estratto con OCR
+        """
+        if not self.use_ocr:
+            return ""
+
+        try:
+            # Converti PDF in immagini (limita alle prime pagine per velocità)
+            images = convert_from_path(pdf_path, first_page=1, last_page=max_pages)
+
+            text = ""
+            for i, image in enumerate(images):
+                # Estrai testo dall'immagine usando Tesseract
+                page_text = pytesseract.image_to_string(image, lang=self.ocr_lang)
+                if page_text:
+                    text += f"\n--- Pagina {i+1} ---\n"
+                    text += page_text + "\n"
+
+            return text.strip()
+
+        except Exception as e:
+            return f"[Errore OCR: {str(e)}]"
+
     def extract_text_from_pdf(self, pdf_path: Path) -> str:
         """
-        Estrae il testo da un PDF
+        Estrae il testo da un PDF, usando OCR se necessario
 
         Args:
             pdf_path: Percorso del file PDF
@@ -93,7 +138,13 @@ class PDFProcessor:
                         if page_text:
                             text += page_text + "\n"
             except Exception as e2:
-                raise Exception(f"Errore nell'estrazione del testo: {str(e)}, {str(e2)}")
+                pass  # Procediamo con OCR
+
+        # Se il testo è vuoto o troppo breve, usa OCR
+        if self.use_ocr and len(text.strip()) < 50:
+            ocr_text = self.extract_text_with_ocr(pdf_path)
+            if ocr_text and not ocr_text.startswith("[Errore"):
+                text = ocr_text
 
         return text.strip()
 
