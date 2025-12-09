@@ -4,6 +4,7 @@ Modulo per la riconciliazione delle deleghe PDF con il file di riepilogo
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import json
+import pandas as pd
 
 
 class ReconciliationResult:
@@ -296,6 +297,27 @@ class DelegheReconciler:
 
         return field_counts
 
+    def _clean_for_json(self, obj):
+        """
+        Pulisce i dati per la serializzazione JSON, gestendo NaT e NaN di pandas
+
+        Args:
+            obj: Oggetto da pulire
+
+        Returns:
+            Oggetto serializzabile in JSON
+        """
+        if isinstance(obj, dict):
+            return {k: self._clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_for_json(item) for item in obj]
+        elif pd.isna(obj):
+            return None
+        elif isinstance(obj, (pd.Timestamp, datetime)):
+            return obj.isoformat() if not pd.isna(obj) else None
+        else:
+            return obj
+
     def export_results(self, output_file: str, format: str = 'json'):
         """
         Esporta i risultati in un file
@@ -312,8 +334,11 @@ class DelegheReconciler:
                 'results': [r.to_dict() for r in self.results]
             }
 
+            # Pulisci i dati da valori NaT/NaN
+            clean_data = self._clean_for_json(data)
+
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(clean_data, f, indent=2, ensure_ascii=False)
 
         elif format == 'csv':
             import csv
