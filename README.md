@@ -2,16 +2,32 @@
 
 Sistema automatico per riconciliare le deleghe cartacee in formato PDF provenienti dalle filiali bancarie con il file di riepilogo centrale.
 
+## 🚀 Installazione Rapida
+
+### Windows
+1. **Doppio click** su `install_windows.bat` o `install_windows.ps1`
+2. Segui le istruzioni
+
+### Linux/Mac
+```bash
+chmod +x install_linux_mac.sh
+./install_linux_mac.sh
+```
+
+📘 **[Guida Completa Installazione →](INSTALLAZIONE.md)**
+
+---
+
 ## Caratteristiche
 
-- ✅ **Estrazione automatica** di informazioni dai PDF scansionati
+- ✅ **Estrazione automatica** di informazioni dai PDF scansionati (con OCR)
 - ✅ **Supporto multipli formati** per il file di riepilogo (CSV, Excel)
 - ✅ **Riconciliazione intelligente** con rilevamento automatico delle discrepanze
 - ✅ **Report dettagliati** in formato JSON, HTML, TXT e CSV
 - ✅ **Interfaccia CLI** user-friendly con colori e progress
 - ✅ **Analisi standalone** di PDF o file di riepilogo
 
-## Installazione
+## Installazione Manuale
 
 ### Prerequisiti
 
