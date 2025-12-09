@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 from processors.pdf_processor import PDFProcessor
 from processors.summary_reader import SummaryReader
 from reconcilers.reconciler import DelegheReconciler
+from reconcilers.branch_reconciler import BranchReconciler
 from utils.report_generator import ReportGenerator
 
 
@@ -277,6 +278,170 @@ def analyze_summary(summary_file):
 
     except Exception as e:
         click.echo(f"{Fore.RED}Errore: {str(e)}{Style.RESET_ALL}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    '--pdf-dir',
+    type=click.Path(exists=True),
+    default='data/pdf_scans',
+    help='Directory contenente i PDF delle deleghe'
+)
+@click.option(
+    '--report-file',
+    type=click.Path(exists=True),
+    required=True,
+    help='File PDF del report bancario con i totali per dipendenza'
+)
+@click.option(
+    '--output-dir',
+    type=click.Path(),
+    default='data/output',
+    help='Directory per i file di output'
+)
+@click.option(
+    '--verbose',
+    is_flag=True,
+    help='Output dettagliato'
+)
+def reconcile_branches(pdf_dir, report_file, output_dir, verbose):
+    """
+    Riconcilia i totali delle deleghe per dipendenza/filiale
+
+    Confronta il numero di deleghe cartacee per dipendenza nel report
+    con il numero di PDF scansionati presenti per ciascuna dipendenza.
+    """
+    click.echo(f"{Fore.CYAN}╔════════════════════════════════════════════════════════════╗")
+    click.echo(f"║  Riconciliazione Totali per Dipendenza                    ║")
+    click.echo(f"╚════════════════════════════════════════════════════════════╝{Style.RESET_ALL}\n")
+
+    try:
+        click.echo(f"{Fore.YELLOW}[1/3] Analisi report bancario...{Style.RESET_ALL}")
+
+        reconciler = BranchReconciler(pdf_dir, report_file)
+
+        # Estrai totali dal report
+        from processors.bank_report_parser import BankReportParser
+        parser = BankReportParser(report_file)
+        report_totals = parser.extract_branch_totals()
+
+        click.echo(f"  Trovate {len(report_totals)} dipendenze nel report")
+        total_deleghe_report = sum(report_totals.values())
+        click.echo(f"  Totale deleghe cartacee nel report: {total_deleghe_report}")
+
+        if verbose:
+            click.echo(f"\n  Prime 5 dipendenze:")
+            for i, (dip, count) in enumerate(sorted(report_totals.items())[:5], 1):
+                click.echo(f"    {i}. Dipendenza {dip}: {count} deleghe")
+
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} Report analizzato")
+
+        # Conta PDF per dipendenza
+        click.echo(f"\n{Fore.YELLOW}[2/3] Analisi PDF per dipendenza...{Style.RESET_ALL}")
+        pdf_counts = reconciler.count_pdfs_by_branch()
+
+        click.echo(f"  Trovati PDF per {len(pdf_counts)} dipendenze")
+        total_pdf = sum(pdf_counts.values())
+        click.echo(f"  Totale PDF scansionati: {total_pdf}")
+
+        if verbose and pdf_counts:
+            click.echo(f"\n  Prime 5 dipendenze:")
+            for i, (dip, count) in enumerate(sorted(pdf_counts.items())[:5], 1):
+                click.echo(f"    {i}. Dipendenza {dip}: {count} PDF")
+
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} PDF analizzati")
+
+        # Riconciliazione
+        click.echo(f"\n{Fore.YELLOW}[3/3] Riconciliazione in corso...{Style.RESET_ALL}")
+        results = reconciler.reconcile()
+        summary = results['summary']
+
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} Riconciliazione completata")
+
+        # Mostra risultati
+        click.echo(f"\n{Fore.CYAN}{'═' * 60}")
+        click.echo(f"RISULTATI RICONCILIAZIONE")
+        click.echo(f"{'═' * 60}{Style.RESET_ALL}\n")
+
+        click.echo(f"Dipendenze totali: {summary['total_branches']}")
+        click.echo(f"{Fore.GREEN}✓{Style.RESET_ALL} Corrispondenti: {summary['matched']}")
+
+        if summary['mismatched'] > 0:
+            click.echo(f"{Fore.YELLOW}⚠{Style.RESET_ALL} Con discrepanze: {summary['mismatched']}")
+
+        if summary['only_in_pdf'] > 0:
+            click.echo(f"{Fore.RED}⚠{Style.RESET_ALL} Solo in PDF (non in report): {summary['only_in_pdf']}")
+
+        if summary['only_in_report'] > 0:
+            click.echo(f"{Fore.RED}⚠{Style.RESET_ALL} Solo in Report (PDF mancanti): {summary['only_in_report']}")
+
+        click.echo(f"\nTotale deleghe nel report: {summary['total_report_count']}")
+        click.echo(f"Totale PDF trovati: {summary['total_pdf_count']}")
+
+        diff = summary['overall_difference']
+        if diff > 0:
+            click.echo(f"Differenza: {Fore.YELLOW}+{diff} PDF in eccesso{Style.RESET_ALL}")
+        elif diff < 0:
+            click.echo(f"Differenza: {Fore.RED}{diff} PDF mancanti{Style.RESET_ALL}")
+        else:
+            click.echo(f"Differenza: {Fore.GREEN}0 (totali corrispondenti){Style.RESET_ALL}")
+
+        # Mostra discrepanze se richiesto
+        if verbose and (summary['mismatched'] > 0 or summary['only_in_pdf'] > 0 or summary['only_in_report'] > 0):
+            click.echo(f"\n{Fore.CYAN}Dettaglio discrepanze:{Style.RESET_ALL}")
+            for detail in results['details']:
+                if detail['status'] != 'matched':
+                    status_color = Fore.YELLOW if detail['status'] == 'mismatch' else Fore.RED
+                    click.echo(
+                        f"{status_color}  Dipendenza {detail['codice_dipendenza']}: "
+                        f"Report={detail['totale_report']}, PDF={detail['totale_pdf']} "
+                        f"(Diff: {detail['differenza']:+d}){Style.RESET_ALL}"
+                    )
+
+        # Salva report
+        click.echo(f"\n{Fore.YELLOW}Salvataggio report...{Style.RESET_ALL}")
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Report testuale
+        text_report = reconciler.generate_report_text(results)
+        text_file = output_path / 'branch_reconciliation_report.txt'
+        with open(text_file, 'w', encoding='utf-8') as f:
+            f.write(text_report)
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} Report TXT: {text_file}")
+
+        # CSV con dettagli
+        import csv
+        csv_file = output_path / 'branch_reconciliation_details.csv'
+        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['codice_dipendenza', 'totale_report', 'totale_pdf', 'differenza', 'status'])
+            writer.writeheader()
+            writer.writerows(results['details'])
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} Report CSV: {csv_file}")
+
+        # JSON completo
+        import json
+        json_file = output_path / 'branch_reconciliation.json'
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        click.echo(f"  {Fore.GREEN}✓{Style.RESET_ALL} Report JSON: {json_file}")
+
+        # Messaggio finale
+        if summary['matched'] == summary['total_branches']:
+            click.echo(f"\n{Fore.GREEN}{'═' * 60}")
+            click.echo(f"✓ Tutti i totali corrispondono perfettamente!")
+            click.echo(f"{'═' * 60}{Style.RESET_ALL}\n")
+        else:
+            click.echo(f"\n{Fore.YELLOW}{'═' * 60}")
+            click.echo(f"⚠ Trovate discrepanze. Verifica i report generati.")
+            click.echo(f"{'═' * 60}{Style.RESET_ALL}\n")
+
+    except Exception as e:
+        click.echo(f"\n{Fore.RED}✗ Errore: {str(e)}{Style.RESET_ALL}", err=True)
+        if verbose:
+            import traceback
+            click.echo(traceback.format_exc(), err=True)
         sys.exit(1)
 
 
