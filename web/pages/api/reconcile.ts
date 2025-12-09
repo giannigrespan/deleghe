@@ -123,7 +123,7 @@ async function processCSV(filepath: string): Promise<Map<string, DelegaCSV>> {
         })
         resolve(delegheMap)
       },
-      error: (error) => reject(error)
+      error: (error: Error) => reject(error)
     })
   })
 }
