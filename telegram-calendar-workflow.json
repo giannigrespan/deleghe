@@ -1,0 +1,749 @@
+{
+  "name": "Telegram Calendar & Email Assistant",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "cron-morning-summary",
+      "name": "Cron - Riepilogo Mattutino",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "",
+      "credentials": {},
+      "notes": "Trigger alle 8:00 ogni mattina",
+      "notesInFlow": true,
+      "cronExpression": "0 8 * * *"
+    },
+    {
+      "parameters": {},
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [240, 600],
+      "webhookId": "",
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      },
+      "notes": "Riceve messaggi da Telegram"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message.voice}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "if-voice-message",
+      "name": "È Messaggio Vocale?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 600],
+      "notes": "Verifica se è un messaggio vocale"
+    },
+    {
+      "parameters": {
+        "fileId": "={{$json.message.voice.file_id}}",
+        "download": true
+      },
+      "id": "telegram-get-voice",
+      "name": "Scarica Messaggio Vocale",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [680, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "whisper-1",
+        "binaryData": true,
+        "options": {
+          "language": "it"
+        }
+      },
+      "id": "openai-speech-to-text",
+      "name": "OpenAI Speech-to-Text",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [900, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "2",
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "Converte voce in testo"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "merge-text",
+      "name": "Unisci Testo",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1120, 600],
+      "notes": "Unisce messaggio vocale convertito o testo diretto"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.text || $json.transcription}}",
+              "operation": "regex",
+              "value2": "/(evento|aggiungi|crea|calendario|calendar)/i"
+            }
+          ]
+        }
+      },
+      "id": "if-calendar-event",
+      "name": "Comando Calendario?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.text || $json.transcription}}",
+              "operation": "regex",
+              "value2": "/(email|invia|manda|scrivi)/i"
+            }
+          ]
+        }
+      },
+      "id": "if-send-email",
+      "name": "Comando Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 800]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "=Estrai le seguenti informazioni dal messaggio dell'utente e rispondi SOLO in formato JSON:\n\nMessaggio: {{$json.text || $json.transcription}}\n\nFormato richiesto:\n{\n  \"summary\": \"titolo evento\",\n  \"description\": \"descrizione\",\n  \"startDateTime\": \"YYYY-MM-DDTHH:mm:ss\",\n  \"endDateTime\": \"YYYY-MM-DDTHH:mm:ss\",\n  \"location\": \"indirizzo se presente\"\n}\n\nSe non è specificata un'ora, usa le 09:00 come default. Se non è specificata una data, usa domani."
+      },
+      "id": "openai-parse-event",
+      "name": "Parse Evento con AI",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1560, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "2",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": "primary",
+        "summary": "={{JSON.parse($json.choices[0].message.content).summary}}",
+        "description": "={{JSON.parse($json.choices[0].message.content).description}}",
+        "start": "={{JSON.parse($json.choices[0].message.content).startDateTime}}",
+        "end": "={{JSON.parse($json.choices[0].message.content).endDateTime}}",
+        "location": "={{JSON.parse($json.choices[0].message.content).location}}"
+      },
+      "id": "google-calendar-create",
+      "name": "Crea Evento Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [1780, 500],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "3",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node['Telegram Trigger'].json.message.chat.id}}",
+        "text": "=✅ Evento creato:\n\n📅 {{JSON.parse($node['Parse Evento con AI'].json.choices[0].message.content).summary}}\n⏰ {{JSON.parse($node['Parse Evento con AI'].json.choices[0].message.content).startDateTime}}\n📍 {{JSON.parse($node['Parse Evento con AI'].json.choices[0].message.content).location || 'Nessuna posizione'}}"
+      },
+      "id": "telegram-confirm-event",
+      "name": "Conferma Evento su Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{JSON.parse($node['Parse Evento con AI'].json.choices[0].message.content).location}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "if-has-location",
+      "name": "Ha Posizione?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2220, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node['Telegram Trigger'].json.message.chat.id}}",
+        "latitude": "={{0}}",
+        "longitude": "={{0}}",
+        "additionalFields": {
+          "reply_markup": {
+            "inline_keyboard": [
+              [
+                {
+                  "text": "🗺️ Apri in Google Maps",
+                  "url": "=https://www.google.com/maps/search/?api=1&query={{encodeURIComponent(JSON.parse($node['Parse Evento con AI'].json.choices[0].message.content).location)}}"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "id": "telegram-send-location",
+      "name": "Invia Link Google Maps",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2440, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "=Estrai le seguenti informazioni dal messaggio dell'utente e rispondi SOLO in formato JSON:\n\nMessaggio: {{$json.text || $json.transcription}}\n\nFormato richiesto:\n{\n  \"contactName\": \"nome destinatario\",\n  \"subject\": \"oggetto email\",\n  \"body\": \"corpo del messaggio\"\n}"
+      },
+      "id": "openai-parse-email",
+      "name": "Parse Email con AI",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1560, 800],
+      "credentials": {
+        "openAiApi": {
+          "id": "2",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "query": "={{JSON.parse($json.choices[0].message.content).contactName}}"
+        }
+      },
+      "id": "google-contacts-search",
+      "name": "Cerca Contatto Google",
+      "type": "n8n-nodes-base.googleContacts",
+      "typeVersion": 1,
+      "position": [1780, 800],
+      "credentials": {
+        "googleContactsOAuth2Api": {
+          "id": "4",
+          "name": "Google Contacts account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.emailAddresses[0].value}}",
+        "subject": "={{JSON.parse($node['Parse Email con AI'].json.choices[0].message.content).subject}}",
+        "message": "={{JSON.parse($node['Parse Email con AI'].json.choices[0].message.content).body}}"
+      },
+      "id": "gmail-send",
+      "name": "Invia Email Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [2000, 800],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "5",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node['Telegram Trigger'].json.message.chat.id}}",
+        "text": "=✉️ Email inviata a {{JSON.parse($node['Parse Email con AI'].json.choices[0].message.content).contactName}}\n\nOggetto: {{JSON.parse($node['Parse Email con AI'].json.choices[0].message.content).subject}}"
+      },
+      "id": "telegram-confirm-email",
+      "name": "Conferma Email su Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 800],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": "primary",
+        "options": {
+          "timeMin": "={{new Date().toISOString()}}",
+          "timeMax": "={{new Date(new Date().setHours(23,59,59,999)).toISOString()}}",
+          "maxResults": 50
+        }
+      },
+      "id": "google-calendar-today",
+      "name": "Eventi Oggi",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "3",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": "primary",
+        "options": {
+          "timeMin": "={{new Date(new Date().setDate(new Date().getDate() + 1)).setHours(0,0,0,0)}}",
+          "timeMax": "={{new Date(new Date().setDate(new Date().getDate() + 1)).setHours(23,59,59,999)}}",
+          "maxResults": 50
+        }
+      },
+      "id": "google-calendar-tomorrow",
+      "name": "Eventi Domani",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [460, 200],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "3",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "q": "pagamento OR fattura OR bolletta OR paid OR payment"
+        }
+      },
+      "id": "gmail-get-payments",
+      "name": "Email Pagamenti",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [460, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "5",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const eventsToday = $input.first().json;\nconst eventsTomorrow = $input.all()[1]?.json || [];\nconst emailsPayments = $input.all()[2]?.json || [];\n\nlet message = \"🌅 *RIEPILOGO GIORNALIERO*\\n\\n\";\n\n// Eventi di oggi\nmessage += \"📅 *EVENTI DI OGGI:*\\n\";\nif (eventsToday && eventsToday.items && eventsToday.items.length > 0) {\n  eventsToday.items.forEach(event => {\n    const startTime = new Date(event.start.dateTime || event.start.date).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'});\n    message += `\\n⏰ ${startTime} - ${event.summary}`;\n    if (event.location) {\n      message += `\\n   📍 ${event.location}`;\n    }\n  });\n} else {\n  message += \"\\nNessun evento oggi\\n\";\n}\n\nmessage += \"\\n\\n📅 *EVENTI DI DOMANI:*\\n\";\nif (eventsTomorrow && eventsTomorrow.items && eventsTomorrow.items.length > 0) {\n  eventsTomorrow.items.forEach(event => {\n    const startTime = new Date(event.start.dateTime || event.start.date).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'});\n    message += `\\n⏰ ${startTime} - ${event.summary}`;\n    if (event.location) {\n      message += `\\n   📍 ${event.location}`;\n    }\n  });\n} else {\n  message += \"\\nNessun evento domani\\n\";\n}\n\n// Email pagamenti\nmessage += \"\\n\\n💰 *EMAIL PAGAMENTI:*\\n\";\nif (emailsPayments && emailsPayments.length > 0) {\n  const recentPayments = emailsPayments.slice(0, 10);\n  recentPayments.forEach(email => {\n    const date = new Date(parseInt(email.internalDate)).toLocaleDateString('it-IT');\n    message += `\\n📧 ${date} - ${email.payload.headers.find(h => h.name === 'Subject')?.value || 'Nessun oggetto'}`;\n  });\n} else {\n  message += \"\\nNessuna email sui pagamenti\\n\";\n}\n\nreturn [{json: {message: message}}];"
+      },
+      "id": "code-format-summary",
+      "name": "Formatta Riepilogo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "telegramApi",
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send-summary",
+      "name": "Invia Riepilogo Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-morning-data",
+      "name": "Unisci Dati Mattutini",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "text-field",
+              "name": "text",
+              "value": "={{$json.message.text}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-text-message",
+      "name": "Imposta Testo Messaggio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Invia posizione per eventi con location\nconst events = $input.all();\nconst output = [];\n\nevents.forEach(event => {\n  if (event.json.location) {\n    output.push({\n      json: {\n        chatId: $node['Telegram Trigger'].json.message.chat.id,\n        location: event.json.location,\n        summary: event.json.summary,\n        start: event.json.start\n      }\n    });\n  }\n});\n\nreturn output;"
+      },
+      "id": "code-process-locations",
+      "name": "Processa Posizioni Eventi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "location-url",
+              "name": "mapsUrl",
+              "value": "=https://www.google.com/maps/search/?api=1&query={{encodeURIComponent($json.location)}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-maps-url",
+      "name": "Crea Link Google Maps",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1340, 100]
+    }
+  ],
+  "connections": {
+    "Cron - Riepilogo Mattutino": {
+      "main": [
+        [
+          {
+            "node": "Eventi Oggi",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Eventi Domani",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Pagamenti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "È Messaggio Vocale?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "È Messaggio Vocale?": {
+      "main": [
+        [
+          {
+            "node": "Scarica Messaggio Vocale",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Imposta Testo Messaggio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scarica Messaggio Vocale": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Speech-to-Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Speech-to-Text": {
+      "main": [
+        [
+          {
+            "node": "Unisci Testo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Imposta Testo Messaggio": {
+      "main": [
+        [
+          {
+            "node": "Unisci Testo",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unisci Testo": {
+      "main": [
+        [
+          {
+            "node": "Comando Calendario?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Comando Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comando Calendario?": {
+      "main": [
+        [
+          {
+            "node": "Parse Evento con AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comando Email?": {
+      "main": [
+        [
+          {
+            "node": "Parse Email con AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Evento con AI": {
+      "main": [
+        [
+          {
+            "node": "Crea Evento Google Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crea Evento Google Calendar": {
+      "main": [
+        [
+          {
+            "node": "Conferma Evento su Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferma Evento su Telegram": {
+      "main": [
+        [
+          {
+            "node": "Ha Posizione?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ha Posizione?": {
+      "main": [
+        [
+          {
+            "node": "Invia Link Google Maps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email con AI": {
+      "main": [
+        [
+          {
+            "node": "Cerca Contatto Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerca Contatto Google": {
+      "main": [
+        [
+          {
+            "node": "Invia Email Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invia Email Gmail": {
+      "main": [
+        [
+          {
+            "node": "Conferma Email su Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eventi Oggi": {
+      "main": [
+        [
+          {
+            "node": "Unisci Dati Mattutini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eventi Domani": {
+      "main": [
+        [
+          {
+            "node": "Unisci Dati Mattutini",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Email Pagamenti": {
+      "main": [
+        [
+          {
+            "node": "Unisci Dati Mattutini",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Unisci Dati Mattutini": {
+      "main": [
+        [
+          {
+            "node": "Formatta Riepilogo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Processa Posizioni Eventi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatta Riepilogo": {
+      "main": [
+        [
+          {
+            "node": "Invia Riepilogo Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processa Posizioni Eventi": {
+      "main": [
+        [
+          {
+            "node": "Crea Link Google Maps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2025-12-12T08:00:00.000Z",
+  "versionId": "1"
+}
